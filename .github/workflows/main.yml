@@ -92,6 +92,9 @@ jobs:
             ${{ needs.prepare.outputs.url && format('io.hass.url={0}', needs.prepare.outputs.url) || '' }}
           push: 'true'
           version: ${{ needs.prepare.outputs.version }}
+          build-args: |
+            BUILD_FROM=ghcr.io/home-assistant/${{ matrix.arch }}-base-debian:bookworm
+            TTYD_VERSION=1.7.7
 
   manifest:
     name: Publish multi-arch manifest
