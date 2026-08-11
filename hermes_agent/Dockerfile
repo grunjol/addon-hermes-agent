@@ -92,7 +92,8 @@ COPY landing.html.tpl /var/www/landing.html.tpl
 COPY loading.html /var/www/loading.html
 COPY brew-wrapper.sh /usr/local/bin/brew-wrapper
 COPY dashboard-patches.py /usr/local/bin/hermes-dashboard-patches
-RUN chmod +x /run.sh /usr/local/bin/brew-wrapper /usr/local/bin/hermes-dashboard-patches /usr/local/bin/hermes-desktop-backend /usr/local/lib/hermes-gateway-child.sh
+COPY entrypoint-local.sh /entrypoint-local.sh
+RUN chmod +x /run.sh /entrypoint-local.sh /usr/local/bin/brew-wrapper /usr/local/bin/hermes-dashboard-patches /usr/local/bin/hermes-desktop-backend /usr/local/lib/hermes-gateway-child.sh
 
 # ── nginx dirs ───────────────────────────────────────────────────────
 RUN mkdir -p /var/www /var/log/nginx /run/nginx
@@ -100,4 +101,4 @@ RUN mkdir -p /var/www /var/log/nginx /run/nginx
 # Runtime HOME (build uses /root, runtime uses /config = addon persistent storage)
 ENV HOME=/config
 
-CMD ["/run.sh"]
+CMD ["/entrypoint-local.sh"]
