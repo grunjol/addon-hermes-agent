@@ -10,11 +10,17 @@
 # Set apply_fixes=false to skip container-fixes and boot clean.
 set -euo pipefail
 
-APPLY_FIXES=$(bashio::config 'apply_fixes')
+OPTIONS_FILE="/data/options.json"
+# Default true; only an explicit `false` in the addon options disables fixes.
+APPLY_FIXES=$(jq -r 'if .apply_fixes == false then "false" else "true" end' "$OPTIONS_FILE")
 CONTAINER_FIXES="/config/fixes/container-fixes.py"
 
-if [ "${APPLY_FIXES}" = "true" ] && [ -f "$CONTAINER_FIXES" ]; then
-    echo "[entrypoint] applying container-fixes (includes /run.sh)..."
+if [ "${APPLY_FIXES}" != "true" ]; then
+    echo "[entrypoint] container-fixes DISABLED by addon option (apply_fixes=false) — booting stock /run.sh"
+elif [ ! -f "$CONTAINER_FIXES" ]; then
+    echo "[entrypoint] container-fixes not generated yet (Hermes will create them on first boot) — nothing to patch"
+else
+    echo "[entrypoint] applying container-fixes to the image before /run.sh starts..."
     python3 "$CONTAINER_FIXES" --with-runsh 2>&1 | sed 's/^/[container-fixes] /' || true
 fi
 

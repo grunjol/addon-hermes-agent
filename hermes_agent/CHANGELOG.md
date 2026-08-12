@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.1.2
+
+- Fix entrypoint: read `apply_fixes` with jq (bashio not available in this addon)
+
 ## 1.3.1.1
 
 - Added `apply_fixes` config option (default true) to toggle container-fixes at startup
