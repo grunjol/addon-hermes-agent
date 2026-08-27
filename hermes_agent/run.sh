@@ -442,6 +442,16 @@ install_hermes_core() {
 
 install_hermes_core
 
+# Keep the gateway process recognizable to Hermes core without replacing
+# Python's argv[0] with a name that breaks Linux venv discovery. A relative
+# symlink stays valid when the persisted add-on config is restored elsewhere.
+GATEWAY_PYTHON="$VENV_DIR/bin/hermes-gateway"
+if [ -e "$GATEWAY_PYTHON" ] && [ ! -L "$GATEWAY_PYTHON" ]; then
+    echo "[run] FATAL: reserved gateway interpreter path already exists" >&2
+    exit 1
+fi
+ln -snf python "$GATEWAY_PYTHON"
+
 # Activate the shared venv for any tooling (e.g. dashboard module probe).
 # shellcheck disable=SC1091
 source "$VENV_DIR/bin/activate"
