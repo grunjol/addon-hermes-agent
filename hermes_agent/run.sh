@@ -347,6 +347,41 @@ install_needed() {
     return 1
 }
 
+required_python_version() {
+    local version="3.11"
+    if [ -e "$SRC_DIR/.python-version" ] || [ -L "$SRC_DIR/.python-version" ]; then
+        version=$(cat "$SRC_DIR/.python-version") || return 1
+    fi
+    if [[ ! "$version" =~ ^3\.[0-9]+(\.[0-9]+)?$ ]]; then
+        echo "[run] FATAL: .python-version must contain 3.MINOR or 3.MINOR.PATCH" >&2
+        return 1
+    fi
+    printf '%s\n' "$version"
+}
+
+hermes_runtime_works() {
+    [ -f "$VENV_DIR/bin/activate" ] && [ -x "$VENV_DIR/bin/hermes" ] && \
+        [ -x "$VENV_DIR/bin/python" ] || return 1
+    local probe_dir status=0
+    probe_dir=$(mktemp -d) || return 1
+    # Imports must exercise the installed CLI/config dependencies without writing
+    # bytecode or touching the user's profile, even before initial scaffolding.
+    (
+        cd "$SRC_DIR" || exit 1
+        HOME="$probe_dir" HERMES_HOME="$probe_dir" HERMES_PROFILE="" \
+            "$VENV_DIR/bin/python" -B -c '
+import sys
+expected = tuple(map(int, sys.argv[1].split(".")))
+if sys.version_info[:len(expected)] != expected:
+    sys.exit(1)
+import hermes_cli.main
+import hermes_cli.config
+' "$1"
+    ) || status=$?
+    rm -rf -- "$probe_dir"
+    return "$status"
+}
+
 install_hermes_core() {
     mkdir -p "$(dirname "$SRC_DIR")"
 
@@ -378,29 +413,54 @@ install_hermes_core() {
         )
     fi
 
-    # Editable install
-    if [ ! -f "$VENV_DIR/bin/activate" ]; then
-        echo "[run] Creating venv..."
-        uv venv "$VENV_DIR" --python 3.11
+    # Resolve the selected checkout's pin after clone/update, never from the image.
+    local python_version backup_dir rebuild=false
+    python_version=$(required_python_version) || return 1
+    if ! hermes_runtime_works "$python_version"; then
+        rebuild=true
     fi
-    if install_needed; then
-        echo "[run] Installing Hermes (editable)..."
-        (
-            cd "$SRC_DIR"
-            # shellcheck disable=SC1091
-            source "$VENV_DIR/bin/activate"
-            uv pip install -e ".[all,dev]" 2>&1 | tail -5
+    if install_needed || [ "$rebuild" = "true" ]; then
+        # Build at the final path so executable shebangs remain valid. Keep the
+        # old environment until a replacement passes installation and imports.
+        # Ordinary source updates retain a healthy venv and its extra packages.
+        backup_dir=$(mktemp -d "${VENV_DIR}.backup.XXXXXX") || return 1
+        if [ "$rebuild" = "true" ] && { [ -e "$VENV_DIR" ] || [ -L "$VENV_DIR" ]; }; then
+            mv -- "$VENV_DIR" "$backup_dir/venv" || return 1
+            echo "[run] Previous venv saved at $backup_dir/venv until install succeeds"
+        fi
+        echo "[run] Installing Hermes with Python $python_version (editable)..."
+        if (
+            if [ "$rebuild" = "true" ]; then
+                uv venv "$VENV_DIR" --python "$python_version" || exit 1
+            fi
+            cd "$SRC_DIR" || exit 1
+            uv pip install --python "$VENV_DIR/bin/python" -e ".[all,dev]" 2>&1 | tail -5 || exit 1
             if [ -f "$SRC_DIR/mini-swe-agent/pyproject.toml" ]; then
-                uv pip install -e "$SRC_DIR/mini-swe-agent" 2>&1 | tail -3
+                uv pip install --python "$VENV_DIR/bin/python" -e "$SRC_DIR/mini-swe-agent" 2>&1 | tail -3 || exit 1
             fi
             if [ -f "$SRC_DIR/tinker-atropos/pyproject.toml" ]; then
-                uv pip install -e "$SRC_DIR/tinker-atropos" 2>&1 | tail -3
+                uv pip install --python "$VENV_DIR/bin/python" -e "$SRC_DIR/tinker-atropos" 2>&1 | tail -3 || exit 1
             fi
-        )
-        compute_marker > "$MARKER_FILE"
-        echo "[run] Install complete"
+            hermes_runtime_works "$python_version" || exit 1
+            compute_marker > "$backup_dir/marker" || exit 1
+            mv -- "$backup_dir/marker" "$MARKER_FILE" || exit 1
+        ); then
+            rm -rf -- "$backup_dir"
+            echo "[run] Install complete"
+        else
+            echo "[run] FATAL: Python $python_version install/import validation failed" >&2
+            if [ "$rebuild" = "true" ]; then
+                rm -rf -- "$VENV_DIR"
+                if [ -e "$backup_dir/venv" ] || [ -L "$backup_dir/venv" ]; then
+                    mv -- "$backup_dir/venv" "$VENV_DIR" || return 1
+                    echo "[run] Previous venv restored" >&2
+                fi
+            fi
+            rm -rf -- "$backup_dir"
+            return 1
+        fi
     else
-        echo "[run] Install up to date (marker match)"
+        echo "[run] Install up to date (marker and Python runtime match)"
     fi
 
     # Link image-installed npm packages into project node_modules

@@ -1,0 +1,28 @@
+{
+  "date": "2026-09-26",
+  "target": "Home Assistant OS / Supervisor, amd64",
+  "candidate_base": "544395b5bc95a01189cee423b6a01bf954e2f9a6",
+  "candidate_entrypoint_sha256": "a3d28f10c12019598d846ece16570347d9a3e425443be15d1668feb593a6bc14",
+  "method": "Supervisor-managed v1.3.3 image with only /run.sh replaced by the v1.3.4 candidate; published package verification follows release.",
+  "hermes_commit": "d0288be5b3330d2442e3907185b8e9d0958297bb",
+  "migration": {
+    "from_python": "3.11.2",
+    "to_python": "3.14.7",
+    "fixture": "Copy of an existing Python 3.11 environment with the current source installation marker retained",
+    "result": "PASS"
+  },
+  "checks": {
+    "two_standalone_gateways": "PASS",
+    "authenticated_models_per_profile": "PASS",
+    "nginx_profile_routing": "PASS",
+    "unauthenticated_models_401": "PASS",
+    "exactly_one_discoverable_gateway_per_profile": "PASS"
+  },
+  "native_profile_restart": {
+    "result": "FAIL",
+    "exit_code": 1,
+    "reason": "Native CLI returned 'no such gateway' for the isolated custom-path profile. No target replacement or config reload occurred; sibling and other service PIDs remained unchanged. This does not prove behavior for other profile-registration layouts.",
+    "issue": "https://github.com/WolframRavenwolf/hermes-ha-addon/issues/35"
+  },
+  "no_model_request": true
+}

@@ -4,6 +4,20 @@
 
 - Merge upstream v1.3.2: gateway supervision runtime health fixes + `backup_exclude` to shrink Home Assistant backups
 
+## [1.3.4] - 2026-09-26
+
+### Fixed
+
+- Use the selected Hermes checkout's `.python-version` instead of forcing Python 3.11. Older revisions without that file retain the Python 3.11 default.
+- Rebuild incompatible or broken virtual environments even when the installation marker matches. Validate CLI/config imports before recording a successful install, and restore the previous environment if a rebuild fails.
+- Preserve healthy compatible environments and additional packages during ordinary source updates. An interpreter migration reinstalls the project's dependencies; manually added packages may need reinstalling for the new Python version.
+
+### Verified
+
+- Local regression suite: 138 passed, 2 skipped.
+- Real Home Assistant Supervisor candidate test: Python 3.11 to 3.14 migration, both standalone gateway APIs, per-profile nginx routing and unauthenticated-request rejection. Exact candidate identity and scope are recorded in [`docs/verification/v1.3.4-ha-smoke.json`](../docs/verification/v1.3.4-ha-smoke.json).
+- Native single-profile `hermes gateway restart` remains unresolved in #35; it did not restart or reload the isolated custom-path profile during this test.
+
 ## [1.3.3] - 2026-09-26
 
 ### Fixed

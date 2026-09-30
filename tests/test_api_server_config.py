@@ -801,11 +801,11 @@ class ReservedApiVariableTests(unittest.TestCase):
 
 
 class PublicationMetadataTests(unittest.TestCase):
-    def test_addon_version_is_1_3_3(self):
+    def test_addon_version_is_1_3_4(self):
         config = CONFIG.read_text()
         match = re.search(r'^version:\s*["\']?([^"\'\s]+)', config, re.MULTILINE)
         self.assertIsNotNone(match)
-        self.assertEqual(match.group(1) if match else None, "1.3.3")
+        self.assertEqual(match.group(1) if match else None, "1.3.4")
 
     def test_translation_describes_api_password_policy(self):
         translation = TRANSLATION.read_text().lower()
