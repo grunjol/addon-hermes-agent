@@ -1,5 +1,30 @@
 # Changelog
 
+## [Unreleased]
+
+## [1.3.4.1] - 2026-09-30
+
+### Changed
+
+- Merge upstream v1.3.3: named-profile startup compatibility. The add-on now sets
+  `gateway.standalone: true` on add-on-managed named profiles before any gateway starts.
+- Merge upstream v1.3.4: honour the Hermes checkout's `.python-version`, validate the
+  runtime before recording a successful install, and rebuild an incompatible virtual
+  environment with rollback instead of forcing Python 3.11 on every install.
+- Keep the fork's entrypoint contract: `/entrypoint-local.sh` still applies
+  container-fixes before `exec /run.sh`, so the `/run.sh` patches are unaffected.
+- Preserve the fork identity (slug, `image`, `url`, description) over the upstream
+  `config.yaml` block.
+
+### Verified
+
+- The opt-in Hermes Desktop remote backend on container port 9119 still ships in this
+  release; the fork publishes pre-built images for it and changes none of that contract.
+- `/run.sh` patch compatibility: the fork's `fix_run_sh` applies all six patches to the
+  upstream v1.3.4 `run.sh`, idempotently, and `bash -n` stays clean.
+- Local regression suite: 139 tests, 1 failure; the failure is an upstream defect that
+  also fails on a pristine v1.3.4 checkout (see README).
+
 ## 1.3.2.1
 
 - Merge upstream v1.3.2: gateway supervision runtime health fixes + `backup_exclude` to shrink Home Assistant backups
