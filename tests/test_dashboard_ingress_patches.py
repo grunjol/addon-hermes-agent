@@ -1190,8 +1190,17 @@ class DashboardIngressPatchTests(unittest.TestCase):
             self.assertIsNone(stubborn.poll())
             os.killpg(stubborn.pid, signal.SIGKILL)
             self.assertEqual(stubborn.wait(timeout=5), -signal.SIGKILL)
-            with self.assertRaises(ProcessLookupError):
-                os.killpg(stubborn.pid, 0)
+            # A SIGKILLed group can briefly keep zombie members until the
+            # subreaper reaps them; poll instead of assuming synchronous cleanup.
+            deadline = time.monotonic() + 5
+            while True:
+                try:
+                    os.killpg(stubborn.pid, 0)
+                except ProcessLookupError:
+                    break
+                if time.monotonic() >= deadline:
+                    self.fail("stubborn process group still exists after SIGKILL")
+                time.sleep(0.05)
 
             def start_logger(
                 fifo: Path,
