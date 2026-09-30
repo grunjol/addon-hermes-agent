@@ -31,6 +31,10 @@ jobs:
         run: python3 -m pip install --quiet pyyaml
 
       - name: Run the suite
+        id: suite
+        # The pinned upstream defect makes unittest exit 1; let the evaluation
+        # step below decide whether that failure is allowed.
+        continue-on-error: true
         env:
           PYTHONDONTWRITEBYTECODE: "1"
         run: |
