@@ -1090,6 +1090,11 @@ shutdown() {
 # Register signal handler BEFORE starting services
 trap shutdown SIGTERM SIGINT
 
+# Supporting Hermes revisions require named profiles to opt into the add-on's
+# existing one-gateway-per-profile topology. Complete every config write before
+# the first gateway so a partial topology can never be launched.
+configure_profile_topology "$VENV_DIR/bin/python" "$VENV_DIR/bin/hermes"
+
 install_start_hermes_wrapper
 
 for i in "${!PROFILE_DIRS[@]}"; do

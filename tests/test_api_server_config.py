@@ -801,11 +801,11 @@ class ReservedApiVariableTests(unittest.TestCase):
 
 
 class PublicationMetadataTests(unittest.TestCase):
-    def test_addon_version_is_1_3_2(self):
+    def test_addon_version_is_1_3_3(self):
         config = CONFIG.read_text()
         match = re.search(r'^version:\s*["\']?([^"\'\s]+)', config, re.MULTILINE)
         self.assertIsNotNone(match)
-        self.assertEqual(match.group(1) if match else None, "1.3.2")
+        self.assertEqual(match.group(1) if match else None, "1.3.3")
 
     def test_translation_describes_api_password_policy(self):
         translation = TRANSLATION.read_text().lower()
@@ -881,19 +881,16 @@ class PublicationMetadataTests(unittest.TestCase):
         unreleased = changelog.split("## [Unreleased]", 1)[1].split(
             "\n## [", 1
         )[0]
-        release = changelog.split("## [1.3.2] - 2026-08-27", 1)[1].split(
+        release = changelog.split("## [1.3.3] - 2026-09-26", 1)[1].split(
             "\n## [", 1
         )[0]
         self.assertEqual(unreleased.strip(), "")
-        self.assertIn("### Changed", release)
         self.assertIn("### Fixed", release)
         self.assertIn("### Verified", release)
-        self.assertIn("backup size", release)
-        self.assertIn("`hermes-gateway`", release)
-        self.assertIn("external supervisor", release)
-        self.assertIn("122 tests OK, 2 skipped", release)
-        self.assertIn("older pinned Hermes revisions", release)
-        self.assertIn("Home Assistant", release)
+        self.assertIn("`gateway.standalone: true`", release)
+        self.assertIn("older Hermes revisions", release)
+        self.assertIn("129 tests OK, 2 skipped", release)
+        self.assertIn("Bash 3.2", release)
         self.assertNotIn("Pending final publication verification", release)
 
 

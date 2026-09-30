@@ -4,6 +4,19 @@
 
 - Merge upstream v1.3.2: gateway supervision runtime health fixes + `backup_exclude` to shrink Home Assistant backups
 
+## [1.3.3] - 2026-09-26
+
+### Fixed
+
+- Restore named-profile startup compatibility with current Hermes by setting `gateway.standalone: true` on add-on-managed named profiles before any gateway starts.
+- Leave older Hermes revisions, the default profile, and legacy or custom flat profile homes untouched by capability-detecting standalone support instead of relying on version strings.
+
+### Verified
+
+- `PYTHONDONTWRITEBYTECODE=1 python -B -m unittest discover -s tests -q` with Python 3.11.15 - 129 tests OK, 2 skipped.
+- Focused coverage verifies unsupported Hermes revisions, default and flat homes, missing/false/true named-profile values, write failure propagation, and configuration-before-start ordering under macOS Bash 3.2.
+- Shell syntax for the touched scripts, Python syntax, YAML parsing, and `git diff --check` passed.
+
 ## [1.3.2] - 2026-08-27
 
 ### Changed

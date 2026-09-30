@@ -130,6 +130,42 @@ resolve_profiles() {
   done
 }
 
+# Hermes versions with standalone-profile support treat homes directly below a
+# `profiles` directory as named profiles. Keep older revisions untouched, and
+# use the supporting revision's config writer before any gateway starts.
+configure_profile_topology() {
+  local hermes_python="$1"
+  local hermes_cli="$2"
+  local i home parent standalone status
+
+  if ! "$hermes_python" -c 'from hermes_cli.profiles import profile_is_standalone' \
+    >/dev/null 2>&1; then
+    return 0
+  fi
+
+  for i in "${!PROFILE_HOMES[@]}"; do
+    home="${PROFILE_HOMES[$i]%/}"
+    parent="${home%/*}"
+    [ "${parent##*/}" = "profiles" ] || continue
+
+    # Missing or not-yet-recognized keys make `config get` return nonzero.
+    # Suppress that probe-only diagnostic; the guarded writer below remains
+    # authoritative and fails startup on corrupt config or any write error.
+    if standalone="$(HERMES_HOME="$home" "$hermes_cli" config get gateway.standalone --json 2>/dev/null)" \
+      && [ "$standalone" = "true" ]; then
+      continue
+    fi
+
+    if HERMES_HOME="$home" "$hermes_cli" config set gateway.standalone true --force; then
+      echo "[profile-init] Enabled standalone gateway compatibility for '$home'"
+    else
+      status=$?
+      echo "[profile-init] FATAL: could not set gateway.standalone for '$home'" >&2
+      return "$status"
+    fi
+  done
+}
+
 # Portable in-place edit (works on GNU sed + BSD sed without temp-file leftovers).
 _sed_inplace() {
   local file="$1"

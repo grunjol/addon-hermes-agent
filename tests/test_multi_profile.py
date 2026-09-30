@@ -390,6 +390,162 @@ class EnvMergeTests(unittest.TestCase):
         self.assertEqual(env.get("API_SERVER_KEY"), "")
 
 
+# ── C. named-profile standalone compatibility ───────────────────────
+
+def _run_standalone_configuration(
+    profile_homes, *, already_true_homes=(), missing_value_homes=(),
+    fail_set_homes=(), supports_standalone=True
+):
+    """Configure profile topology through a fake Hermes CLI and return its calls."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        log_path = tmp_path / "hermes-calls.log"
+        for home in profile_homes:
+            Path(home).mkdir(parents=True, exist_ok=True)
+        for home in already_true_homes:
+            (Path(home) / ".fake-standalone").touch()
+        for home in missing_value_homes:
+            (Path(home) / ".fake-get-missing").touch()
+        for home in fail_set_homes:
+            (Path(home) / ".fake-set-fails").touch()
+        fake_python = tmp_path / "python"
+        fake_python.write_text(textwrap.dedent("""\
+            #!/bin/bash
+            if [ "$1" = "-c" ] && [ "$2" = "from hermes_cli.profiles import profile_is_standalone" ]; then
+                [ "$FAKE_SUPPORTS_STANDALONE" = "true" ]
+                exit $?
+            fi
+            exit 64
+        """))
+        fake_python.chmod(0o755)
+        fake_hermes = tmp_path / "hermes"
+        fake_hermes.write_text(textwrap.dedent("""\
+            #!/bin/bash
+            printf '%s|%s\\n' "$HERMES_HOME" "$*" >> "$FAKE_HERMES_LOG"
+            if [ "$1 $2 $3" = "config get gateway.standalone" ]; then
+                if [ -f "$HERMES_HOME/.fake-get-missing" ]; then
+                    printf 'Config key not set: gateway.standalone\\n' >&2
+                    exit 1
+                fi
+                if [ -f "$HERMES_HOME/.fake-standalone" ]; then
+                    printf 'true\\n'
+                else
+                    printf 'false\\n'
+                fi
+                exit 0
+            fi
+            if [ "$1 $2 $3" = "config set gateway.standalone" ] && [ "$4" = "true" ]; then
+                [ ! -f "$HERMES_HOME/.fake-set-fails" ] || exit 23
+                touch "$HERMES_HOME/.fake-standalone"
+                exit 0
+            fi
+            exit 64
+        """))
+        fake_hermes.chmod(0o755)
+        homes = " ".join(shlex.quote(str(home)) for home in profile_homes)
+        script = textwrap.dedent(f"""
+            set -euo pipefail
+            export FAKE_HERMES_LOG={shlex.quote(str(log_path))}
+            export FAKE_SUPPORTS_STANDALONE={shlex.quote(str(supports_standalone).lower())}
+            source {shlex.quote(str(PROFILE_INIT_LIB))}
+            PROFILE_HOMES=({homes})
+            configure_profile_topology {shlex.quote(str(fake_python))} {shlex.quote(str(fake_hermes))}
+        """)
+        result = subprocess.run(
+            [BASH, "-c", script], text=True, capture_output=True, check=False
+        )
+        calls = log_path.read_text().splitlines() if log_path.exists() else []
+        return result, calls
+
+
+class StandaloneCompatibilityTests(unittest.TestCase):
+    def test_unsupported_hermes_leaves_named_profile_untouched(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            named_home = Path(tmp) / ".hermes" / "profiles" / "amy"
+            result, calls = _run_standalone_configuration(
+                [named_home], supports_standalone=False
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(calls, [])
+
+    def test_named_profile_is_marked_standalone_through_its_hermes_home(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            named_home = Path(tmp) / ".hermes" / "profiles" / "amy"
+            result, calls = _run_standalone_configuration([named_home])
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(calls, [
+            f"{named_home}|config get gateway.standalone --json",
+            f"{named_home}|config set gateway.standalone true --force",
+        ])
+
+    def test_default_and_custom_flat_homes_are_untouched(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            default_home = root / ".hermes"
+            flat_home = root / "amy"
+            custom_home = root / "agents" / "bob"
+            result, calls = _run_standalone_configuration(
+                [default_home, flat_home, custom_home]
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(calls, [])
+
+    def test_named_profile_already_true_is_not_rewritten(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            named_home = Path(tmp) / ".hermes" / "profiles" / "amy"
+            result, calls = _run_standalone_configuration(
+                [named_home], already_true_homes=[named_home]
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(calls, [
+            f"{named_home}|config get gateway.standalone --json",
+        ])
+
+    def test_named_profile_with_unset_value_is_set(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            named_home = Path(tmp) / ".hermes" / "profiles" / "amy"
+            result, calls = _run_standalone_configuration(
+                [named_home], missing_value_homes=[named_home]
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stderr, "")
+        self.assertEqual(calls, [
+            f"{named_home}|config get gateway.standalone --json",
+            f"{named_home}|config set gateway.standalone true --force",
+        ])
+
+    def test_named_profile_set_failure_propagates_nonzero(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            named_home = Path(tmp) / ".hermes" / "profiles" / "amy"
+            result, calls = _run_standalone_configuration(
+                [named_home], fail_set_homes=[named_home]
+            )
+
+        self.assertEqual(result.returncode, 23, result.stderr)
+        self.assertIn("FATAL: could not set gateway.standalone", result.stderr)
+        self.assertEqual(calls, [
+            f"{named_home}|config get gateway.standalone --json",
+            f"{named_home}|config set gateway.standalone true --force",
+        ])
+
+    def test_all_topology_configuration_precedes_gateways_and_desktop(self):
+        run_text = (ROOT / "hermes_agent" / "run.sh").read_text()
+        startup = run_text[run_text.index("# Register signal handler BEFORE starting services"):]
+
+        config_pos = startup.index(
+            'configure_profile_topology "$VENV_DIR/bin/python" "$VENV_DIR/bin/hermes"'
+        )
+        gateway_pos = startup.index('start_gateway_signal_safe "$i"')
+        desktop_pos = startup.index("desktop_backend_start")
+        self.assertLess(config_pos, gateway_pos)
+        self.assertLess(gateway_pos, desktop_pos)
+
+
 # ── D. Rendered nginx config invariants ──────────────────────────────
 
 def _render_full_config(
