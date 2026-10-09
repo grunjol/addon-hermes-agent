@@ -52,6 +52,7 @@ fi
 source "$API_SERVER_LIB"
 GATEWAY_LAUNCHER=""
 for _candidate in \
+    "/usr/local/lib/hermes-cli/hermes" \
     "/usr/local/lib/hermes-gateway-launcher.py" \
     "$(dirname "${BASH_SOURCE[0]}")/gateway-launcher.py"; do
     if [ -f "$_candidate" ]; then
@@ -924,7 +925,9 @@ start_dashboard_for_profile() {
     (
         cd "$home"
         export HERMES_HOME="$home"
-        exec "$VENV_DIR/bin/python" -c "from hermes_cli.web_server import start_server; start_server(host='127.0.0.1', port=${port}, open_browser=False)"
+        # A real script survives PM's interpreter handback; its import-time
+        # profile mask keeps this exact assigned home even with sticky selection.
+        exec "$VENV_DIR/bin/python" /usr/local/lib/hermes-dashboard-launcher.py dashboard --host 127.0.0.1 --port "${port}" --skip-build --no-open
     ) &
     DASHBOARD_PIDS[$i]=$!
     echo "[run] [$name] Dashboard PID: ${DASHBOARD_PIDS[$i]}"

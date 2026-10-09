@@ -469,6 +469,7 @@ class StartupContractTests(unittest.TestCase):
             "get_default_hermes_root",
             lambda: Path("/real/hermes/root"),
         )
+        hermes_bootstrap = types.ModuleType("hermes_bootstrap")
         modules = {
             "hermes_cli": package,
             "hermes_cli.env_loader": env_loader,
@@ -476,6 +477,7 @@ class StartupContractTests(unittest.TestCase):
             "gateway": gateway_package,
             "gateway.config": gateway_config,
             "hermes_constants": hermes_constants,
+            "hermes_bootstrap": hermes_bootstrap,
         }
         with mock.patch.dict(sys.modules, modules), mock.patch.dict(
             os.environ,
@@ -653,7 +655,7 @@ class StartupContractTests(unittest.TestCase):
             {"host": "127.0.0.1", "port": 8642, "key": "documented-key"},
         )
 
-    def test_fixed_profile_import_masks_sticky_root_and_restores_helper(self):
+    def test_fixed_profile_import_masks_sticky_profile_and_preserves_root_helper(self):
         self.assertTrue(GATEWAY_LAUNCHER.is_file())
         import importlib.util
 
@@ -666,25 +668,37 @@ class StartupContractTests(unittest.TestCase):
         spec.loader.exec_module(launcher)
 
         constants = types.ModuleType("hermes_constants")
+        root = Path("/real/hermes/root")
 
         def original_root():
-            return Path("/real/hermes/root")
+            return root
 
         setattr(constants, "get_default_hermes_root", original_root)
         imported_main = types.SimpleNamespace(main=lambda: None)
         observed = {}
+        real_exists = Path.exists
 
         def import_module(name):
             self.assertEqual(name, "hermes_cli.main")
+            # A module binding the helper at import time (pm.environments does)
+            # must keep the real function, never a /dev/null sentinel: that leak
+            # made the source-update dependency completion read
+            # /dev/null/installs/<key>/facts.json.
             observed["root"] = constants.get_default_hermes_root()
+            # Only the sticky active_profile probe is hidden, for this window.
+            observed["sticky_hidden"] = not (root / "active_profile").exists()
             return imported_main
 
-        with mock.patch.dict(sys.modules, {"hermes_constants": constants}):
+        with mock.patch.dict(sys.modules, {"hermes_constants": constants}), mock.patch.dict(
+            os.environ, {"HERMES_HOME": str(root)}
+        ):
             result = launcher._import_fixed_profile_main(import_module)
 
         self.assertIs(result, imported_main.main)
-        self.assertEqual(observed["root"], Path(os.devnull))
+        self.assertEqual(observed["root"], root)
+        self.assertTrue(observed["sticky_hidden"])
         self.assertIs(constants.get_default_hermes_root, original_root)
+        self.assertIs(Path.exists, real_exists)
 
     def test_api_validation_precedes_nginx_install_and_service_startup(self):
         run = RUN_SCRIPT.read_text()
@@ -801,11 +815,14 @@ class ReservedApiVariableTests(unittest.TestCase):
 
 
 class PublicationMetadataTests(unittest.TestCase):
-    def test_addon_version_is_1_3_4_1(self):
+    def test_addon_version_matches_changelog(self):
         config = CONFIG.read_text()
         match = re.search(r'^version:\s*["\']?([^"\'\s]+)', config, re.MULTILINE)
         self.assertIsNotNone(match)
-        self.assertEqual(match.group(1) if match else None, "1.3.4.1")
+        version = match.group(1) if match else ""
+        # The fork numbers sub-point releases with a fourth component (e.g. 1.3.7.1).
+        self.assertRegex(version, r"^\d+\.\d+\.\d+(\.\d+)?$")
+        self.assertIn(f"## [{version}]", CHANGELOG.read_text())
 
     def test_translation_describes_api_password_policy(self):
         translation = TRANSLATION.read_text().lower()
