@@ -28,7 +28,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install test dependencies
-        run: python3 -m pip install --quiet pyyaml
+        run: python3 -m pip install --quiet pyyaml fastapi httpx
 
       - name: Run the suite
         id: suite
