@@ -2,6 +2,39 @@
 
 ## [Unreleased]
 
+## [1.3.7.1] - 2026-10-09
+
+### Changed
+
+- Merge upstream v1.3.5: dashboards start through `/usr/local/lib/hermes-dashboard-launcher.py`
+  in exactly their assigned profile home, the gateway launcher keeps a real, discoverable
+  command across a package-manager interpreter replacement, the Desktop backend survives that
+  replacement, and authenticated detailed-health traffic is forwarded on ingress and on the
+  enabled direct HTTP/HTTPS listeners.
+- Merge upstream v1.3.6: keep the Hermes source root importable when the gateway launcher
+  re-enters itself after an interpreter replacement, which fixes the 1.3.5 gateway restart loop
+  (`ModuleNotFoundError: No module named 'hermes_cli'`).
+- Merge upstream v1.3.7: dashboard gateway Start/Stop/Restart answers HTTP 409 with Home
+  Assistant lifecycle guidance instead of dispatching native s6 actions.
+- Keep the fork's entrypoint contract: `/entrypoint-local.sh` still applies container-fixes
+  before `exec /run.sh`, and the fork identity (slug, `image`, `url`, description) still wins
+  over the upstream `config.yaml` block.
+- Adopt upstream's version-aware changelog test and extend it for the fork's fourth component
+  (`1.3.7.1`), so the published version can never drift from its changelog section again.
+
+### Verified
+
+- Local regression suite: 158 tests, 1 failure, 1 skipped. The failure is the pinned upstream
+  defect (`test_gateway_supervisor_rejects_changed_parent_before_launch`: asserts `parent
+  changed`, while the logger reports `parent-death contract failed (errno N)`); it fails
+  identically on a pristine upstream v1.3.7 checkout, so the fork's CI rule allows exactly it.
+- `/run.sh` patch compatibility (container-fixes `fix_run_sh`): the dashboard-start patches 5a
+  and 5g are **retired** by this rebase — upstream replaced the `python -c … start_server` body
+  they patched with the real launcher script. Patches 5b, 5c, 5d, 5e, 5f, 5h and 5i still apply.
+- Container and Home Assistant Supervisor restart/update verification of this release is still
+  pending (see the handoff README).
+
+
 All notable changes to the Hermes Agent Home Assistant add-on are documented here.
 
 The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions match the add-on `version` in `config.yaml`.
