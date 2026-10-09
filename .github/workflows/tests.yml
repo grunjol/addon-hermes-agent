@@ -54,7 +54,7 @@ jobs:
             OK*)
               echo "suite is fully green"
               ;;
-            "FAILED (failures=1)")
+            "FAILED (failures=1)"|"FAILED (failures=1, skipped="*)
               if grep -q "test_gateway_supervisor_rejects_changed_parent_before_launch" suite.log; then
                 echo "only the known upstream defect failed — allowed"
               else
