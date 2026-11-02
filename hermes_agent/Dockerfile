@@ -33,8 +33,8 @@ ENV LANG=C.UTF-8 \
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 ENV UV_LINK_MODE=copy
 
-# ── Node.js 22 ──────────────────────────────────────────────────────
-RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+# ── Node.js 26 ──────────────────────────────────────────────────────
+RUN curl -fsSL https://deb.nodesource.com/setup_26.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/* \
     && npm install -g agent-browser
