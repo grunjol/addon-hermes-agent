@@ -35,9 +35,9 @@ Add-on-level options are configured in the Home Assistant UI (Settings > Apps > 
 | Option                | Default                                            | Description                                                                     |
 | --------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------- |
 | `git_url`             | `https://github.com/NousResearch/hermes-agent.git` | Git repository URL (clear to reset to default)                                  |
-| `git_ref`             |                                                    | Branch, tag, or commit (empty = repo's default branch)                          |
+| `git_ref`             |                                                    | Branch or tag for initial clone (empty = published Stable release for official URL; custom URL uses its default branch) |
 | `git_token`           |                                                    | Token for private repos + exported as `GITHUB_TOKEN` for gh CLI                 |
-| `auto_update`         | `false`                                            | Pull latest changes on restart (preserves local modifications)                  |
+| `auto_update`         | `false`                                            | Update shared source at startup using the selected channel on official blank-ref checkouts; see below |
 | `hass_url`            | `http://homeassistant.local:8123`                  | Home Assistant URL for API access                                               |
 | `homeassistant_token` |                                                    | Long-lived access token for Home Assistant API integration                      |
 | `enable_dashboard`    | `false`                                            | Enable web dashboard on direct HTTP/HTTPS ports                                 |
@@ -52,6 +52,18 @@ Add-on-level options are configured in the Home Assistant UI (Settings > Apps > 
 | `profile_env_vars`    | `[]`                                               | Per-profile `.env` overrides: each entry is `{profile, name, value}` where `profile` matches a directory in `profiles` |
 
 API keys can be configured in two places: `env_vars` above (convenient, via Home Assistant UI) or each profile's `.env` directly (full list, via terminal or `hermes setup`). Environment names must be standard shell-variable identifiers, and configured values must not contain CR or LF. Non-empty top-level `env_vars` are written to every profile's `.env` on each start, overriding existing entries. Each `profile_env_vars.profile` must exactly match an entry in `profiles`; matching entries layer on top of the shared set.
+
+### Hermes source updates
+
+The add-on version and the persisted Hermes source checkout have separate update paths. Updating the add-on replaces its packaged scripts; `auto_update` controls source updates at startup and defaults to `false`. All profiles share one checkout and add-on-managed Python environment.
+
+For the official `git_url` with empty `git_ref`, a fresh install clones the latest **published stable GitHub release** (`vX.Y.Z`), verifies its tag and commit against the official origin, and stops if the release cannot be verified. It does not fall back to `main`. An existing checkout is not switched merely by upgrading the add-on. With `auto_update: false`, no source update is attempted.
+
+With `auto_update: true` on an existing official blank-ref checkout, the add-on consults the checkout's native Hermes source-channel resolver before its ordinary Python/venv installation and before gateways start. A saved `hermes update --set-channel main`, `stable`, or other supported channel in any configured profile applies to the shared checkout; conflicting explicit choices stop startup and name the affected profile homes. No profile config is rewritten. An unchosen default follows Stable **forward only**: a checkout already newer than the latest published release stays where it is. An explicitly saved Stable choice can select an older stable release. Local source changes are kept when Git can apply the target without overwriting them; an unsafe update stops startup rather than discarding them. The add-on still owns the shared venv and gateways; it does not run the full `hermes update` lifecycle or migrate its package manager.
+
+Older official checkouts without Hermes' native source-channel API still follow a verified published Stable release (forward-only unless Stable was explicitly saved); an explicit `main` selection follows the main branch. If the release lookup is unavailable, the update is held with a warning and startup continues with the existing source. A saved non-Stable channel on an old checkout cannot be resolved without the native API: startup warns and retains the existing checkout. Manually upgrade to a current published Hermes release to resume that channel. A saved non-Stable channel on a *fresh* official checkout also needs manual bootstrap of a native-capable checkout; startup fails instead of choosing another channel silently.
+
+An explicit `git_ref` (branch or tag) or custom `git_url` keeps the previous Git clone and branch-pull behavior and bypasses the official Stable selector. `git_ref` is used only on the first clone; changing it later does not switch an existing checkout. A fixed tag is detached and cannot follow future tags through `git pull`. For a release pin, use a tag and leave `auto_update: false`.
 
 ### Running multiple profiles concurrently
 
