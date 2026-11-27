@@ -6,7 +6,41 @@ The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/e
 
 ## [Unreleased]
 
-## [1.3.14] - 2026-11-27
+## [1.3.14.1] - 2026-11-27
+
+### Changed
+
+- Merge upstream v1.3.11: build the dashboard with Hermes' selected Node/npm environment and its
+  native frontend builder (Vite fallback for older checkouts), and allow 30 bounded token checks
+  before disabling dashboard routes instead of installing a placeholder token.
+- Merge upstream v1.3.12: source selection works with `ruamel.yaml` or PyYAML; an official
+  blank-ref update that finds local checkout changes is held with a warning and the retained
+  source starts; `pnpm` workspace checkouts build the dashboard through Hermes' native helpers.
+- Merge upstream v1.3.13: Hermes Desktop logins survive add-on restarts. The verified password
+  hash and a random signing secret are kept in the primary profile's home
+  (`/config/.hermes/.ha-desktop-auth.json`, mode 0600); changing the password or logging out still
+  ends sessions, and the first start after updating needs one new login.
+- Merge upstream v1.3.14: `auto_update` can now apply source updates when the add-on's own
+  dashboard compatibility patches are the only local changes — they are verified byte for byte,
+  restored before the update and re-applied afterwards. User edits, staged/untracked changes,
+  diverged commits and conflicts keep the previous hold-off behavior.
+- Keep the fork's entrypoint contract and identity: `/entrypoint-local.sh` still applies
+  container-fixes before `exec /run.sh`; Node.js 26, `hassio_api`/`hassio_role: manager` and the
+  fork's `slug`/`image`/`url`/`apply_fixes` option survive the rebase.
+
+### Verified
+
+- Local regression suite: 227 tests, 1 failure, 5 skipped. The failure is the pinned upstream
+  defect (`test_gateway_supervisor_rejects_changed_parent_before_launch`), which fails identically
+  on a pristine upstream checkout. The skips are environment-dependent: four need `ruamel.yaml`
+  (the container's Hermes venv has it, this runner does not) and one is an opt-in Docker nginx
+  test.
+- `/run.sh` patch compatibility (container-fixes `fix_run_sh`): patches 5c, 5d, 5e, 5h and 5i apply
+  to the v1.3.14 `run.sh` and stay idempotent with a clean `bash -n`. Patch 5f needed a new anchor:
+  upstream v1.3.11 rewrote the dashboard token loop (`seq 1 30`, curl timeouts, `return 1`), so the
+  auth-mode 302 short-circuit now targets that loop.
+- Container and Home Assistant Supervisor validation of this release is still pending; CI builds
+  the image on release.
 
 ### Fixed
 - Let `auto_update` apply source updates when the add-on's own dashboard compatibility patches are the only local changes. Their content is verified byte for byte against the add-on's patcher run on the committed files; they are then restored before the update and re-applied after it in the same start. User edits, including edits to patched files, staged changes and untracked files still hold the update. An already current checkout keeps its patches, so startup does not rebuild the dashboard. Addresses #64.
