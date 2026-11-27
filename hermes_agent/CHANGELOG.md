@@ -6,6 +6,17 @@ The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/e
 
 ## [Unreleased]
 
+## [1.3.11] - 2026-11-09
+
+### Fixed
+- Use Hermes' package manager to prepare its selected Node/npm environment and use the native frontend builder when the checkout provides it. Prepare web dependencies first, retain the Vite fallback for older checkouts, and show bounded build failure output.
+- Wait up to 30 checks for the dashboard session token with curl connection and total timeouts. If it remains unavailable, disable dashboard routes and direct token maps while keeping other add-on services running.
+
+### Verification
+- New focused RED/GREEN regressions - 7 passed; baseline failures reproduced for Node selection/native build, delayed and permanent token readiness, curl timeouts, and unavailable-token map suppression. Existing dashboard-unavailable routing and direct-port token-guard tests - 2 passed.
+- Isolated add-on unittest coverage with Python 3.11.15 - 198 passed, 3 skipped: opt-in Docker nginx runtime test, rendered nginx syntax test without a local nginx binary, and a Linux-only prctl test. No add-on container or Home Assistant Supervisor smoke was performed.
+- `bash -n hermes_agent/run.sh hermes_agent/nginx-render.sh`, `config.yaml` parse/version check, and `git diff --check` passed.
+
 ## [1.3.10.2] - 2026-11-06
 
 ### Added
@@ -57,6 +68,7 @@ The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/e
   dashboard-start patches 5a/5b/5g stay retired since v1.3.5.
 - Container and Home Assistant Supervisor validation of this release is still pending; the image
   is built by CI on release.
+
 
 ## [1.3.10] - 2026-10-24
 
