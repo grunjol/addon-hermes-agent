@@ -832,8 +832,15 @@ fi
 # (Consumed by emit_token_maps / emit_profile_locations in nginx-render.sh.)
 # shellcheck disable=SC2034
 DASHBOARD_TOKENS=()
+# Per-profile "login required" markers. A dashboard started with its own auth
+# redirects the root to /login and never publishes a session token in the HTML,
+# so the add-on cannot bind nginx to that token. The routes must stay up (the
+# dashboard's own login is the gate) and nginx must not emit a token guard that
+# nothing can satisfy. Distinct from a dashboard that never came up.
+DASHBOARD_AUTH_GATED=()
 for i in "${!PROFILE_DIRS[@]}"; do
     DASHBOARD_TOKENS[$i]="PENDING_TOKEN_$i"
+    DASHBOARD_AUTH_GATED[$i]="false"
 done
 
 # Nginx rendering helpers (sourced from a separate library for testability)
@@ -1117,9 +1124,24 @@ inject_dashboard_token_for_profile() {
     fi
     echo "[run] [$name] Waiting for dashboard token..."
     local token=""
+    local auth_gated="false"
+    local attempt response code body
     for attempt in $(seq 1 30); do
-        token=$(curl --connect-timeout 2 --max-time 3 -s "http://127.0.0.1:${port}/" 2>/dev/null \
-            | grep -oP '__HERMES_SESSION_TOKEN__="\K[^"]+' || true)
+        # Status code and body come from the SAME request: the code tells an
+        # auth-gated dashboard (302 -> /login) apart from one that never came up.
+        response=$(curl --connect-timeout 2 --max-time 3 -s -w '\n%{http_code}' \
+            "http://127.0.0.1:${port}/" 2>/dev/null || true)
+        code="${response##*$'\n'}"
+        body="${response%$'\n'*}"
+        case "$code" in
+            301|302|303|307|308)
+                # Auth-gated: the HTML never carries __HERMES_SESSION_TOKEN__.
+                # There is no token to inject; the dashboard's own login is the gate.
+                auth_gated="true"
+                break
+                ;;
+        esac
+        token=$(printf '%s' "$body" | grep -oP '__HERMES_SESSION_TOKEN__="\K[^"]+' || true)
         if [ -n "$token" ]; then
             break
         fi
@@ -1127,6 +1149,11 @@ inject_dashboard_token_for_profile() {
             sleep 2
         fi
     done
+    if [ -z "$token" ] && [ "$auth_gated" = "true" ]; then
+        DASHBOARD_AUTH_GATED[$i]="true"
+        echo "[run] [$name] Dashboard requires login (no session token published); routes stay up"
+        return 0
+    fi
     if [ -z "$token" ]; then
         echo "[run] [$name] Warning: dashboard token unavailable after 30 attempts; dashboard routes will be disabled"
         return 1
@@ -1349,6 +1376,14 @@ for i in "${!PROFILE_DIRS[@]}"; do
         SHOW_DASHBOARD_PORTS="false"
         echo "[run] Dashboard disabled after token acquisition failure; other add-on services will continue"
         break
+    fi
+done
+
+# A dashboard behind its own login has no token to hand to nginx; say so once,
+# after every profile was probed, instead of failing the whole dashboard set.
+for i in "${!PROFILE_DIRS[@]}"; do
+    if [ "${DASHBOARD_AUTH_GATED[$i]:-false}" = "true" ]; then
+        echo "[run] [$i] ${PROFILE_NAMES[$i]}: dashboard login required, session-token binding skipped"
     fi
 done
 

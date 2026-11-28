@@ -369,6 +369,132 @@ class DashboardTokenReadinessTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "")
 
+class DashboardAuthGatedTokenTests(unittest.TestCase):
+    """An auth-gated dashboard publishes no session token; the add-on must not
+    mistake that for a dead dashboard and must not bind nginx to a token that
+    can never arrive (#61 follow-up)."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix="ha-dashboard-gated-test-")
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.bin = self.root / "bin"
+        self.bin.mkdir()
+
+    def run_token_fetch(self, status_code: int, body: str) -> subprocess.CompletedProcess:
+        executable(self.bin / "curl", textwrap.dedent(f"""\
+            #!/usr/bin/env python3
+            import sys
+            sys.stdout.write({body!r} + "\\n" + {str(status_code)!r})
+            """))
+        executable(self.bin / "grep", textwrap.dedent("""\
+            #!/usr/bin/env python3
+            import re
+            import sys
+            match = re.search(r'__HERMES_SESSION_TOKEN__="([^"]+)', sys.stdin.read())
+            if match:
+                print(match.group(1))
+                raise SystemExit(0)
+            raise SystemExit(1)
+            """))
+        executable(self.bin / "sleep", "#!/bin/sh\nexit 0\n")
+        script = "\n".join((
+            "set -uo pipefail",
+            'DASHBOARD_AVAILABLE="true"',
+            'PROFILE_NAMES=("primary")',
+            'DASHBOARD_PORTS=(49469)',
+            'DASHBOARD_TOKENS=("PENDING_TOKEN_0")',
+            'DASHBOARD_AUTH_GATED=("false")',
+            shell_function("inject_dashboard_token_for_profile"),
+            "set +e",
+            "inject_dashboard_token_for_profile 0",
+            'printf "FETCH_STATUS=%s\\n" "$?"',
+            'printf "FETCH_TOKEN=%s\\n" "${DASHBOARD_TOKENS[0]}"',
+            'printf "FETCH_GATED=%s\\n" "${DASHBOARD_AUTH_GATED[0]}"',
+            "exit 0",
+        ))
+        env = os.environ.copy()
+        env.update({"PATH": f"{self.bin}:{os.environ.get('PATH', '')}",
+                    "TMPDIR": str(self.root), "HOME": str(self.root)})
+        return subprocess.run(["/bin/bash", "-c", script], cwd=self.root, env=env,
+                              text=True, capture_output=True, timeout=20)
+
+    def test_login_redirect_keeps_routes_up_without_inventing_a_token(self):
+        result = self.run_token_fetch(302, "")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("FETCH_STATUS=0", result.stdout)
+        self.assertIn("FETCH_GATED=true", result.stdout)
+        self.assertIn("FETCH_TOKEN=PENDING_TOKEN_0", result.stdout)
+        self.assertNotIn("disabled", result.stdout)
+
+    def test_login_redirect_is_not_reported_as_a_token_failure(self):
+        result = self.run_token_fetch(302, "")
+
+        self.assertIn("requires login", result.stdout)
+        self.assertNotIn("unavailable after 30 attempts", result.stdout)
+
+    def test_a_dashboard_that_is_down_still_disables_its_routes(self):
+        result = self.run_token_fetch(503, "")
+
+        self.assertIn("FETCH_STATUS=1", result.stdout)
+        self.assertIn("FETCH_GATED=false", result.stdout)
+        self.assertNotIn("FETCH_TOKEN=tok", result.stdout)
+
+    def test_published_token_is_still_bound(self):
+        result = self.run_token_fetch(
+            200, '<script>window.__HERMES_SESSION_TOKEN__="dashboard-secret-token"</script>')
+
+        self.assertIn("FETCH_STATUS=0", result.stdout)
+        self.assertIn("FETCH_TOKEN=dashboard-secret-token", result.stdout)
+        self.assertIn("FETCH_GATED=false", result.stdout)
+
+    def render(self, gated: str, server_kind: str = "http") -> str:
+        script = "\n".join((
+            "set -uo pipefail",
+            f"source {NGINX_RENDER}",
+            'PROFILE_DIRS=(".hermes")',
+            'PROFILE_NAMES=("hermes")',
+            'PROFILE_PATH_PREFIX=("")',
+            'TTYD_HERMES_PORTS=(1)',
+            'TTYD_TERMINAL_PORTS=(2)',
+            'API_PORTS=(3)',
+            'DASHBOARD_PORTS=(49469)',
+            'DASHBOARD_TOKENS=("tok-abc123")',
+            f'DASHBOARD_AUTH_GATED=("{gated}")',
+            'ENABLE_TERMINAL="false"',
+            'ENABLE_API="false"',
+            'ENABLE_DASHBOARD="true"',
+            'DASHBOARD_AVAILABLE="true"',
+            "emit_token_maps",
+            f"emit_profile_locations {server_kind}",
+        ))
+        result = subprocess.run(["/bin/bash", "-c", script], cwd=self.root,
+                                text=True, capture_output=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return result.stdout
+
+    def test_a_gated_profile_keeps_its_locations(self):
+        output = self.render("true")
+
+        self.assertIn("location /dashboard/api/ {", output)
+        self.assertIn("location /dashboard/ {", output)
+        self.assertIn("location = /dashboard/api/status {", output)
+
+    def test_a_gated_profile_emits_no_token_map_guard_or_bearer_header(self):
+        output = self.render("true")
+
+        self.assertNotIn("dashboard_token_ok_0", output)
+        self.assertNotIn("Bearer", output)
+
+    def test_a_profile_with_a_token_is_rendered_exactly_as_before(self):
+        output = self.render("false")
+
+        self.assertIn('map "$http_x_hermes_session_token|$http_authorization|$arg_token" '
+                      "$dashboard_token_ok_0 {", output)
+        self.assertIn("if ($dashboard_token_ok_0 = 0) { return 401; }", output)
+        self.assertIn('proxy_set_header Authorization "Bearer tok-abc123";', output)
+
 
 if __name__ == "__main__":
     unittest.main()

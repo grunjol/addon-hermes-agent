@@ -6,6 +6,26 @@ The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/e
 
 ## [Unreleased]
 
+## [1.3.14.2] - 2026-11-28
+
+### Fixed
+
+- Dashboard routes no longer get disabled when the dashboard behind them requires a login. Starting
+  in v1.3.11, `inject_dashboard_token_for_profile` treats a dashboard that never publishes
+  `__HERMES_SESSION_TOKEN__` as a failure (`return 1`) and the caller then sets
+  `DASHBOARD_AVAILABLE=false` and drops every `/dashboard/` route from nginx for every profile.
+  A dashboard with its own auth (the `access_password` flow, or a profile with `dashboard.basic_auth`)
+  redirects `/` to `/login` and by design never publishes that token, so an authenticated add-on lost
+  all of its dashboards at boot. The token step now tells the two states apart by the status code of
+  the same request it reads the body from: a `3xx` redirect marks that profile as auth-gated
+  (`DASHBOARD_AUTH_GATED[]`), keeps its routes up, and binds no token; a dashboard that answers
+  without a redirect and without a token is still a real failure and still disables the routes.
+- `nginx-render.sh`: a profile marked auth-gated emits no `dashboard_token_ok` map, no
+  `if ($dashboard_token_ok_N = 0) { return 401; }` guard and no
+  `proxy_set_header Authorization "Bearer ..."` — the dashboard's own login is the only gate, and a
+  stale `Bearer UNAVAILABLE` header made its middleware reject a valid session cookie. A profile
+  that does publish a token renders byte-identically to before.
+
 ## [1.3.14.1] - 2026-11-27
 
 ### Changed

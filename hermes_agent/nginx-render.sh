@@ -6,7 +6,7 @@
 # Consumes these arrays + scalars from the caller:
 #   PROFILE_DIRS[]          PROFILE_NAMES[]          PROFILE_PATH_PREFIX[]
 #   TTYD_HERMES_PORTS[]     TTYD_TERMINAL_PORTS[]    API_PORTS[]
-#   DASHBOARD_PORTS[]       DASHBOARD_TOKENS[]
+#   DASHBOARD_PORTS[]       DASHBOARD_TOKENS[]       DASHBOARD_AUTH_GATED[]
 #   ENABLE_TERMINAL         ENABLE_API               ENABLE_DASHBOARD
 #   DASHBOARD_AVAILABLE
 #
@@ -44,6 +44,9 @@ emit_token_maps() {
     local i token
     [ "${DASHBOARD_AVAILABLE:-true}" = "true" ] || return 0
     for i in "${!PROFILE_DIRS[@]}"; do
+        # Auth-gated dashboards publish no session token; their own login is the
+        # gate, so a token map here would reject every request.
+        [ "${DASHBOARD_AUTH_GATED[$i]:-false}" = "true" ] && continue
         token="${DASHBOARD_TOKENS[$i]}"
         cat <<TOK
     map "\$http_x_hermes_session_token|\$http_authorization|\$arg_token" \$dashboard_token_ok_${i} {
@@ -83,10 +86,16 @@ emit_profile_locations() {
         fi
     fi
 
-    local i prefix token token_guard
+    local i prefix token token_guard auth_header gated
     for i in "${!PROFILE_DIRS[@]}"; do
         prefix="${PROFILE_PATH_PREFIX[$i]}"
         token="${DASHBOARD_TOKENS[$i]}"
+        gated="false"
+        [ "${DASHBOARD_AUTH_GATED[$i]:-false}" = "true" ] && gated="true"
+        # An auth-gated dashboard owns its own login: no token to bind, and a
+        # stale Bearer header would make its middleware reject a valid cookie.
+        auth_header=""
+        [ "$gated" = "true" ] || auth_header="proxy_set_header Authorization \"Bearer ${token}\";"
 
         if [ "$show_terminal" = "true" ]; then
             cat <<HLOC
@@ -171,13 +180,13 @@ DHEAD
             proxy_set_header X-Forwarded-Prefix \$dashboard_forwarded_prefix_${i};
             proxy_set_header X-Real-IP \$remote_addr;
             ${proto_header}
-            proxy_set_header Authorization "Bearer ${token}";
+            ${auth_header}
             proxy_buffering off;
         }
 DSTATUS
             fi
             token_guard=""
-            if [ "$server_kind" != "ingress" ]; then
+            if [ "$server_kind" != "ingress" ] && [ "$gated" != "true" ]; then
                 token_guard="if (\$dashboard_token_ok_${i} = 0) { return 401; }"
             fi
             cat <<DAPI
@@ -194,7 +203,7 @@ DSTATUS
             proxy_set_header X-Forwarded-Prefix \$dashboard_forwarded_prefix_${i};
             proxy_set_header X-Real-IP \$remote_addr;
             ${proto_header}
-            proxy_set_header Authorization "Bearer ${token}";
+            ${auth_header}
             proxy_buffering off;
             proxy_read_timeout 300s;
             proxy_send_timeout 300s;
